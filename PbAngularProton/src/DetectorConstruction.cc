@@ -43,8 +43,13 @@
 #include "G4VPhysicalVolume.hh"
 #include "G4PVPlacement.hh"
 #include "G4PVParameterised.hh"
+#include "ScoreParameterisation.hh"
 #include "G4PVReplica.hh"
 #include "G4UserLimits.hh"
+
+#include "G4MultiFunctionalDetector.hh"
+#include "G4PSEnergyDeposit.hh"
+#include "G4SDManager.hh"
 
 #include "G4RunManager.hh"
 #include "G4GenericMessenger.hh"
@@ -76,7 +81,7 @@ G4VPhysicalVolume* DetectorConstruction::Construct()
     ConstructMaterials();
     G4Material* air = G4Material::GetMaterial("G4_AIR");
     G4Material* lead = G4Material::GetMaterial("G4_Pb");
-    G4Material* CsI = G4Material::GetMaterial("CsI");
+    G4Material* NaI = G4Material::GetMaterial("NaI");
     G4bool checkOverlaps = true;
 
     
@@ -131,7 +136,7 @@ G4VPhysicalVolume* DetectorConstruction::Construct()
 											startingThetaSphere,
 											spanningThetaSphere);
 											
-	G4LogicalVolume* sphereLog = new G4LogicalVolume(sphereSolid, CsI, "SphereLogical");
+	G4LogicalVolume* sphereLog = new G4LogicalVolume(sphereSolid, NaI, "SphereLogical");
 	
 	G4VPhysicalVolume* spherePhysical 
 								= new G4PVPlacement(0,
@@ -143,33 +148,66 @@ G4VPhysicalVolume* DetectorConstruction::Construct()
 								0);
 										
 	
+	//Create scoring rings
 	
-							
+	G4double deltaTheta = 6.0*deg;
+	
+	G4VSolid* scoreSolid = new G4Sphere("ScoreSolid",
+										innerSphereRadius,
+										outerSphereRadius,
+										startingPhiSphere,
+										spanningPhiSphere,
+										startingThetaSphere,
+										deltaTheta);
+										
+	G4LogicalVolume* scoringLog = new G4LogicalVolume(scoreSolid, NaI, "ScoringLogical");
+	
+	ScoreParameterisation* param = new ScoreParameterisation(innerSphereRadius,
+															outerSphereRadius,
+															deltaTheta);
+															
 
-   
-    
-    // =============================================
-    // Exercise 2a,b
-    // Create a box of CsI, Pb or Scintillator
-    // (for nist materials remember to use NIST name, e.g. G4_Pb)
-    // to absorb particles.
-    // Observe how different absorber influence
-    //  shower dimentions.
-    // Some parameters:
-    //   Dimensions (x,y,z): 300x60x100 cm
-    //   Position: on the far back of the "second arm" volume
-    // =============================================
+	new G4PVParameterised ("ScorePhysical", scoringLog, sphereLog, kZAxis,
+								30, param);
 
 	
-    
-    
-   
-    
-    
-    
+  
+	SetupScoring(scoringLog);
+  
+	
     // return the world physical volume ----------------------------------------
     
     return worldPhysical;
+}
+
+void DetectorConstruction::SetupScoring(G4LogicalVolume* scoringVolume)
+	{
+  
+    //create sensitive detector "rings"
+    
+    G4MultiFunctionalDetector* detector = new G4MultiFunctionalDetector("Rings");
+    
+    //get pointer to detector manager
+    G4SDManager* sdManager = G4SDManager::GetSDMpointer();
+    
+    //register detector with manager
+    sdManager->AddNewDetector(detector);
+   
+    //attach detector to scoring volume
+    
+    scoringVolume->SetSensitiveDetector(detector);
+    
+    //create primitive scorer Edep
+    
+    G4PSEnergyDeposit* scoreEdep = new G4PSEnergyDeposit("scoreEdep");
+    
+    //register scorer with detector
+    detector->RegisterPrimitive(scoreEdep);
+    
+    G4cout<<"Created G4MultiFunctionalDetector named "
+        <<detector->GetName()<<", and a G4PSEnergyDeposit scorer "
+        <<"named "<<scoreEdep->GetName()<<G4endl;
+    
 }
 
 //....oooOO0OOooo........oooOO0OOooo........oooOO0OOooo........oooOO0OOooo......
@@ -194,56 +232,27 @@ void DetectorConstruction::ConstructMaterials()
     // (PolyVinylToluene, C_9H_10)
     nistManager->FindOrBuildMaterial("G4_PLASTIC_SC_VINYLTOLUENE");
     
-    // CsI
-    // =============================================
-    // Exercise 1a
-    //    Create material Cesium Iodide.
-    //  Chemical formula CsI.
-    // Some properties:
-    //    Cs : A=55 Zeff=132.9*g/mol
-    //     I : A=53 , Zeff=126.9*g/mol
-    // Density of christal of CsI is rho=4.51*g/cm^3
-    // =============================================
+    //create CSI and NaI for detector crystals
     
     G4Element* elI = new G4Element("Iodine","I", 53., 126.9*g/mole);
     G4Element* elCs = new G4Element("Cesium", "Cs", 55., 132.9*g/mole);
+    G4Element* elNa = new G4Element("Sodium", "Na", 11.0, 22.9*g/mole);
     
     G4Material* CsI = new G4Material("CsI", 4.51*g/cm3, 2);
     
     CsI->AddElement(elCs,1);
     CsI->AddElement(elI,1);
     
-    // Lead
-    // =============================================
-    // Exercise 1b
-    //    Create material Lead from Nist Manager.
-    // Note that it is actually a mixture of several isotopes.
-    // If you want to build it by hand starting from isotopes you
-    // can:
-    //    G4Isotope* iso1= new G4Isotope( ... )
-    //    ....
-    //    G4Element* elem = new G4Element("name","symbol",nisotopes);
-    //    elem->AddIsotope( iso1 );
-    //    elem->AddIsotope( iso2 );
-    //    ...
-    // =============================================
+    G4Material* NaI = new G4Material("NaI", 3.67*g/cm3, 2);
+    
+    NaI->AddElement(elNa,1);
+    NaI->AddElement(elI,1);
+    
     
      nistManager->FindOrBuildMaterial("G4_Pb");
 
     
-    // Important: Never use a real gas with 0 density as materials.
-    //            Physics processes requires density>0 and may give wrong
-    //            results if they encounter 0 density material.
-    //            Instead use one of the following methods if you need
-    //            "vacuum" (e.g. a beam pipe internal)
-    // Vacuum "Galactic"
-    // nistManager->FindOrBuildMaterial("G4_Galactic");
-
-    // Vacuum "Air with low density"
-    // G4Material* air = G4Material::GetMaterial("G4_AIR");
-    // G4double density = 1.0e-5*air->GetDensity();
-    // nistManager
-    //   ->BuildMaterialWithNewDensity("Air_lowDensity", "G4_AIR", density);
+    
 
     G4cout << G4endl << "The materials defined are : " << G4endl << G4endl;
     G4cout << *(G4Material::GetMaterialTable()) << G4endl;

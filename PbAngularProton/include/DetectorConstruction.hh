@@ -65,6 +65,8 @@ public:
     //are created
     void ConstructMaterials();
     
+    void SetupScoring(G4LogicalVolume* scoringVolume);
+    
     G4LogicalVolume* GetScoringVolume() const { return fScoringVolume; }
 
   protected:
